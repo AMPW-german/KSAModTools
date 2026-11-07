@@ -1,0 +1,80 @@
+name: Release KSA Mod
+description: Downloads a built mod artifact, publishes a GitHub Release, and optionally updates SpaceDock.
+
+inputs:
+  version:
+    description: Release tag/version prefixed with 'v' (e.g. v0.3.3).
+    required: true
+  ksa_version:
+    description: Target KSA game version (e.g. 2026.10.25.5707).
+    required: true
+  artifact_name:
+    description: Name of the uploaded build artifact to package.
+    required: true
+  spacedock_id:
+    description: Optional SpaceDock mod ID (falls back to env.SPACEDOCK_ID). If empty, SpaceDock upload is skipped.
+    required: false
+    default: ''
+  spacedock_username:
+    description: SpaceDock username (falls back to env.SPACEDOCK_USERNAME).
+    required: false
+    default: ''
+  spacedock_auth:
+    description: SpaceDock password/token (falls back to env.SPACEDOCK_AUTH or inputs.spacedock_password).
+    required: false
+    default: ''
+  spacedock_password:
+    description: Legacy alias for spacedock_auth.
+    required: false
+    default: ''
+  github_token:
+    description: GitHub token with contents:write permission for creating releases.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  changelog:
+    description: Generated GitHub release changelog body.
+    value: ${{ steps.github-release.outputs.changelog }}
+
+runs:
+  using: composite
+  steps:
+    - name: Download build artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.artifact_name }}
+        path: release-assets
+
+    - name: Zip release payload
+      shell: bash
+      env:
+        ARTIFACT_NAME: ${{ inputs.artifact_name }}
+      run: |
+        cd release-assets
+        zip -r "../${ARTIFACT_NAME}.zip" .
+
+    - name: Create and publish GitHub release
+      id: github-release
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        RELEASE_VERSION: ${{ inputs.version }}
+        KSA_VERSION: ${{ inputs.ksa_version }}
+        ASSET_PATH: ${{ inputs.artifact_name }}.zip
+      run: |
+        bash "${GITHUB_ACTION_PATH}/../scripts/publish_github_release.sh"
+
+    - name: Publish release to SpaceDock
+      if: ${{ inputs.spacedock_id != '' || env.SPACEDOCK_ID != '' }}
+      shell: bash
+      env:
+        SPACEDOCK_ID: ${{ inputs.spacedock_id != '' && inputs.spacedock_id || env.SPACEDOCK_ID }}
+        SPACEDOCK_USERNAME: ${{ inputs.spacedock_username != '' && inputs.spacedock_username || env.SPACEDOCK_USERNAME }}
+        SPACEDOCK_PASSWORD: ${{ inputs.spacedock_auth != '' && inputs.spacedock_auth || (inputs.spacedock_password != '' && inputs.spacedock_password || env.SPACEDOCK_AUTH) }}
+        RELEASE_VERSION: ${{ inputs.version }}
+        RELEASE_CHANGELOG: ${{ steps.github-release.outputs.changelog }}
+        KSA_VERSION: ${{ inputs.ksa_version }}
+        ZIPBALL: ${{ inputs.artifact_name }}.zip
+      run: |
+        bash "${GITHUB_ACTION_PATH}/../scripts/publish_spacedock.sh"
