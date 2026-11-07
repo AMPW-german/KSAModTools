@@ -34,6 +34,12 @@ Shared MSBuild configuration, KSA/StarMap/NuGet assembly resolution, mod packagi
    </Project>
    ```
 
+### Automatated modding tools module updates
+
+A GitHub app was created that automatically creates an auto merge pull requests agaist your default branch when new commits are pushed to the tools repo main branch.
+
+https://github.com/apps/ksamodtools
+
 ## Local Tooling Override
 
 To test a custom `KSAModTools` branch or commit locally without modifying tracked files:
