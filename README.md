@@ -6,7 +6,7 @@ Shared MSBuild configuration, KSA/StarMap/NuGet assembly resolution, mod packagi
 
 - `msbuild/KsaMod.props` — Author-neutral SDK/compiler defaults (`Debug`/`Release`), local KSA path fallbacks (`KSADir`, `KSAModsDir`, `KSADllRepoDir`), `UseKsaNuGetPackages` mode switch, `KsaNuGet.props` import, and `Lib.Harmony` package reference.
 - `msbuild/KsaMod.targets` — Assembly/version defaults, local vs. NuGet KSA assembly resolution, `StarMap.API` reference, `SetVersionMetadata`, and `CopyBuildOutput` + `mod.toml` generation.
-- `scripts/update_ksa_dlls.py` — Updates a KSA DLL snapshot repository with `KSA.dll`, `Planet.Core.dll`, `Planet.Render.Core.dll`, `ksa-versions.csv`, and `KsaNuGet.props` (resolving `Ahwoo.BRUTAL.*`, `BepuPhysics`, `BepuUtilities`, `Samboy063.Tomlet` on NuGet.org and `Lib.Harmony` from `StarMapLoader/StarMap`).
+- `scripts/update_ksa_dlls.py` — Updates a KSA DLL snapshot repository with core DLLs, `ksa-versions.csv`, and `KsaNuGet.props`; dependencies without an exact NuGet version are kept as local DLL references.
 - `githooks/post-merge` & `githooks/post-checkout` — Keeps the `tooling/` submodule synced on `git pull` and branch switches while honoring dirty-tree safety and local branch/commit overrides.
 - `ci/build-package/action.yml` & `ci/release/action.yml` — Composite GitHub Actions for building, testing, packaging, creating GitHub Releases, and publishing to SpaceDock.
 - `.github/workflows/bump-consumers.yml` — Discovers repositories with the public `KSAModTools` GitHub App installed and opens/auto-merges `chore/bump-tooling` PRs on push to `main`.

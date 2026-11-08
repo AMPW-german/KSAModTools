@@ -14,6 +14,7 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 
@@ -136,61 +137,28 @@ def get_product_semver(file_path: str) -> str:
     return get_file_version(file_path)
 
 
-def parse_semver_key(version: str) -> tuple[tuple[int, ...], int, str]:
-    core, _, prerelease = version.partition("-")
-    core_parts = []
-    for part in core.split("."):
-        try:
-            core_parts.append(int(part))
-        except ValueError:
-            core_parts.append(0)
-    while len(core_parts) > 3 and core_parts[-1] == 0:
-        core_parts.pop()
-    is_release = 1 if not prerelease else 0
-    return (tuple(core_parts), is_release, prerelease)
-
-
-def resolve_nuget_version(package_id: str, dll_version: str) -> str:
+def resolve_nuget_version(package_id: str, dll_version: str) -> str | None:
     url = f"https://api.nuget.org/v3-flatcontainer/{package_id.lower()}/index.json"
     req = urllib.request.Request(url, headers={"User-Agent": "KSAModTools/1.0"})
-    with urllib.request.urlopen(req, timeout=30) as response:
-        data = json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            exc.close()
+            return None
+        raise
 
     versions: list[str] = data.get("versions", [])
     if not versions:
-        raise RuntimeError(f"No versions found on NuGet.org for package '{package_id}'.")
+        return None
 
     lower_target = dll_version.lower()
     for v in versions:
         if v.lower() == lower_target:
             return v
 
-    target_key = parse_semver_key(dll_version)
-    target_is_prerelease = "-" in dll_version
-
-    candidates = [
-        v
-        for v in versions
-        if ("-" in v) == target_is_prerelease
-    ] or versions
-
-    greater_or_equal = [
-        v for v in candidates if parse_semver_key(v) >= target_key
-    ]
-    if greater_or_equal:
-        greater_or_equal.sort(key=parse_semver_key)
-        resolved = greater_or_equal[0]
-        print(
-            f"  [NuGet] {package_id}: DLL version {dll_version} not published; resolved to >= {resolved}"
-        )
-        return resolved
-
-    candidates.sort(key=parse_semver_key)
-    resolved = candidates[-1]
-    print(
-        f"  [NuGet] {package_id}: DLL version {dll_version} not published; resolved to latest {resolved}"
-    )
-    return resolved
+    return None
 
 
 def fetch_starmap_harmony_version() -> str:
@@ -252,6 +220,7 @@ def write_ksa_nuget_props(
     props_path: pathlib.Path,
     harmony_version: str,
     nuget_rows: list[dict[str, str]],
+    local_dll_rows: list[dict[str, str]],
 ) -> None:
     lines = [
         "<Project>",
@@ -267,6 +236,16 @@ def write_ksa_nuget_props(
         ver = row["version"]
         lines.append(
             f'    <PackageReference Include="{pkg_id}" Version="[{ver}]" ExcludeAssets="native;contentFiles;build;buildMultitargeting;buildTransitive" />'
+        )
+    for row in local_dll_rows:
+        name = row["name"]
+        lines.extend(
+            [
+                f'    <Reference Include="{name}">',
+                f"      <HintPath>$(MSBuildThisFileDirectory){name}.dll</HintPath>",
+                "      <Private>False</Private>",
+                "    </Reference>",
+            ]
         )
     lines.extend(
         [
@@ -347,6 +326,7 @@ def main() -> None:
     )
 
     rows: list[dict[str, str]] = []
+    local_dll_rows: list[dict[str, str]] = []
     for core_dll in CORE_DLLS:
         dll_path = ksa_dir / core_dll
         if not dll_path.is_file():
@@ -379,14 +359,20 @@ def main() -> None:
         package_id = f"Ahwoo.BRUTAL.{suffix}"
         dll_ver = get_product_semver(str(dll_path))
         resolved_ver = resolve_nuget_version(package_id, dll_ver)
-        rows.append(
-            {
-                "name": stem,
-                "version": resolved_ver,
-                "is_nuget": "true",
-                "package_id": package_id,
-            }
-        )
+        is_nuget = resolved_ver is not None
+        row = {
+            "name": stem,
+            "version": resolved_ver or dll_ver,
+            "is_nuget": "true" if is_nuget else "false",
+            "package_id": package_id if is_nuget else "",
+        }
+        rows.append(row)
+        if not is_nuget:
+            print(
+                f"  [NuGet] Exact version for {package_id} not found; "
+                f"keeping {dll_path.name} locally"
+            )
+            local_dll_rows.append(row)
 
     for bepu_stem in ("BepuPhysics", "BepuUtilities"):
         dll_path = ksa_dir / f"{bepu_stem}.dll"
@@ -394,27 +380,40 @@ def main() -> None:
             raise FileNotFoundError(f"Required assembly not found: {dll_path}")
         dll_ver = get_product_semver(str(dll_path))
         resolved_ver = resolve_nuget_version(bepu_stem, dll_ver)
-        rows.append(
-            {
-                "name": bepu_stem,
-                "version": resolved_ver,
-                "is_nuget": "true",
-                "package_id": bepu_stem,
-            }
-        )
+        is_nuget = resolved_ver is not None
+        row = {
+            "name": bepu_stem,
+            "version": resolved_ver or dll_ver,
+            "is_nuget": "true" if is_nuget else "false",
+            "package_id": bepu_stem if is_nuget else "",
+        }
+        rows.append(row)
+        if not is_nuget:
+            print(
+                f"  [NuGet] Exact version for {bepu_stem} not found; "
+                f"keeping {dll_path.name} locally"
+            )
+            local_dll_rows.append(row)
 
     tomlet_path = ksa_dir / "Tomlet.dll"
     if not tomlet_path.is_file():
         raise FileNotFoundError(f"Required assembly not found: {tomlet_path}")
-    tomlet_ver = resolve_nuget_version("Samboy063.Tomlet", get_product_semver(str(tomlet_path)))
-    rows.append(
-        {
-            "name": "Tomlet",
-            "version": tomlet_ver,
-            "is_nuget": "true",
-            "package_id": "Samboy063.Tomlet",
-        }
-    )
+    tomlet_dll_ver = get_product_semver(str(tomlet_path))
+    tomlet_ver = resolve_nuget_version("Samboy063.Tomlet", tomlet_dll_ver)
+    tomlet_is_nuget = tomlet_ver is not None
+    tomlet_row = {
+        "name": "Tomlet",
+        "version": tomlet_ver or tomlet_dll_ver,
+        "is_nuget": "true" if tomlet_is_nuget else "false",
+        "package_id": "Samboy063.Tomlet" if tomlet_is_nuget else "",
+    }
+    rows.append(tomlet_row)
+    if not tomlet_is_nuget:
+        print(
+            "  [NuGet] Exact version for Samboy063.Tomlet not found; "
+            f"keeping {tomlet_path.name} locally"
+        )
+        local_dll_rows.append(tomlet_row)
 
     for existing_dll in dll_repo_dir.glob("*.dll"):
         print(f"Removing {existing_dll.name}...")
@@ -430,13 +429,18 @@ def main() -> None:
         print(f"Copying {core_dll}...")
         shutil.copyfile(ksa_dir / core_dll, dll_repo_dir / core_dll)
 
+    for row in local_dll_rows:
+        dll_name = f"{row['name']}.dll"
+        print(f"Copying {dll_name}...")
+        shutil.copyfile(ksa_dir / dll_name, dll_repo_dir / dll_name)
+
     csv_path = dll_repo_dir / "ksa-versions.csv"
     props_path = dll_repo_dir / "KsaNuGet.props"
     nuget_rows = [r for r in rows if r["is_nuget"] == "true"]
 
     print(f"Writing {csv_path.name} and {props_path.name}...")
     write_ksa_versions_csv(csv_path, rows)
-    write_ksa_nuget_props(props_path, harmony_version, nuget_rows)
+    write_ksa_nuget_props(props_path, harmony_version, nuget_rows, local_dll_rows)
 
     if not args.no_git:
         commit_message = f"Update to KSA v{current_ksa_version}"
