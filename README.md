@@ -9,6 +9,7 @@ Shared MSBuild configuration, KSA/StarMap/NuGet assembly resolution, mod packagi
 - `scripts/update_ksa_dlls.py` — Updates a KSA DLL snapshot repository with core DLLs, `ksa-versions.csv`, and `KsaNuGet.props`; dependencies without an exact NuGet version are kept as local DLL references.
 - `githooks/post-merge` & `githooks/post-checkout` — Keeps the `tooling/` submodule synced on `git pull` and branch switches while honoring dirty-tree safety and local branch/commit overrides.
 - `ci/build-package/action.yml` & `ci/release/action.yml` — Composite GitHub Actions for building, testing, packaging, creating GitHub Releases, and publishing to SpaceDock.
+- `.agents/skills/` — Agent skills: `ksa-launch` (start KSA through StarMap, isolated instances, profiler capture) and `ksa-vulkan-validation` (Khronos validation layer runs on top of `ksa-launch`).
 - `.github/workflows/bump-consumers.yml` — Discovers repositories with the public `KSAModTools` GitHub App installed and opens/auto-merges `chore/bump-tooling` PRs on push to `main`.
 
 ## Usage in a Mod Repository
