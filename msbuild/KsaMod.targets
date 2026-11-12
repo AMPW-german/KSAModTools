@@ -87,6 +87,12 @@
 
     <Copy SourceFiles="@(FilesToCopy)" DestinationFiles="@(FilesToCopy->'$(SingleCopyDestination)%(RecursiveDir)%(Filename)%(Extension)')" />
 
+    <PropertyGroup>
+      <StarMapExportedAssemblyNames>@(StarMapExportedAssembly)</StarMapExportedAssemblyNames>
+      <StarMapExportedAssemblyNames>$([System.String]::Copy('$(StarMapExportedAssemblyNames)').Replace(';', '&quot;,$([System.Environment]::NewLine)    &quot;'))</StarMapExportedAssemblyNames>
+      <StarMapExportedAssembliesToml Condition="'@(StarMapExportedAssembly)' != ''">ExportedAssemblies = [$([System.Environment]::NewLine)    &quot;$(StarMapExportedAssemblyNames)&quot;$([System.Environment]::NewLine)]</StarMapExportedAssembliesToml>
+    </PropertyGroup>
+
     <ItemGroup>
       <ModManifestLines Include="name = &quot;$(ModName)&quot;" />
       <ModManifestLines Include="version = &quot;v$(Version)&quot;" />
@@ -99,6 +105,7 @@
         <Separator>$([System.Environment]::NewLine)</Separator>
       </ModManifestLines>
       <ModManifestLines Include="EntryAssembly = &quot;$(AssemblyName)&quot;" />
+      <ModManifestLines Include="$(StarMapExportedAssembliesToml)" Condition="'@(StarMapExportedAssembly)' != ''" />
       <ModManifestLines Include="@(StarMapModDependencyLines)" />
     </ItemGroup>
 
